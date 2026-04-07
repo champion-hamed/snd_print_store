@@ -99,7 +99,8 @@ def install_remote_format(format_name):
         "custom_format": code_data.get("custom_format"),
         "print_format_type": code_data.get("print_format_type"),
         "html": code_data.get("html"),
-        "css": code_data.get("css")
+        "css": code_data.get("css"),
+        "format_data": code_data.get("format_data")
     })
 
     local_doc.save(ignore_permissions=True)
