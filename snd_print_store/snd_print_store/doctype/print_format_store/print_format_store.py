@@ -56,7 +56,33 @@ class PrintFormatStore(Document):
 
     @staticmethod
     def get_list(args):
-        return call_hub_api("get_print_format_catalog") or []
+        catalog = call_hub_api("get_print_format_catalog") or []
+
+        for item in catalog:
+            # Default status
+            item['status'] = "Not Installed"
+            
+            if frappe.db.exists("Print Format", item['name']):
+                local_doc = frappe.get_doc("Print Format", item['name'])
+                
+                # Re-calculate hash live
+                local_content = str(local_doc.html or "") + str(local_doc.css or "")
+                local_hash = hashlib.sha256(local_content.encode()).hexdigest()
+                
+                if local_hash == item.get("content_hash"):
+                    item['status'] = "Up to Date"
+                else:
+                    item['status'] = "Update Available"
+
+            # Inside your for loop in get_list:
+            if item['status'] == "Update Available":
+                item['button_label'] = "Update"
+            elif item['status'] == "Not Installed":
+                item['button_label'] = "Install"
+            else:
+                item['button_label'] = None
+                    
+        return catalog
 
     @staticmethod
     def get_count(filters=None, **kwargs): return 0
@@ -77,25 +103,27 @@ def call_hub_api(method, params=None):
 
 @frappe.whitelist()
 def install_remote_format(format_name):
+    # Import inside to avoid circular dependencies if call_hub_api is in the same file
     from .print_format_store import call_hub_api
+    
     code_data = call_hub_api("get_print_code", {"name": format_name})
     
     if not code_data:
         frappe.throw(_("Could not fetch source code from the Hub"))
 
-    new_name = format_name
-    
-    if frappe.db.exists("Print Format", new_name):
-        local_doc = frappe.get_doc("Print Format", new_name)
+    if frappe.db.exists("Print Format", format_name):
+        local_doc = frappe.get_doc("Print Format", format_name)
     else:
         local_doc = frappe.new_doc("Print Format")
-        local_doc.name = new_name
+        # Add this line to set the primary document ID
+        local_doc.name = format_name 
+        local_doc.print_format_name = format_name
 
     local_doc.update({
         "print_format_for": code_data.get("print_format_for"), 
         "doc_type": code_data.get("doc_type"),
         "report": code_data.get("report"),
-        "standard": "No",
+        "standard": "No", # Keeping your preference
         "custom_format": code_data.get("custom_format"),
         "print_format_type": code_data.get("print_format_type"),
         "html": code_data.get("html"),
@@ -104,9 +132,41 @@ def install_remote_format(format_name):
     })
 
     local_doc.save(ignore_permissions=True)
-    frappe.db.commit()
-
+    
     return {
         "status": "success", 
-        "message": _("Format installed as {0}").format(new_name)
+        "message": _("Format {0} synced successfully").format(format_name)
     }
+
+@frappe.whitelist()
+def bulk_sync():
+    from .print_format_store import call_hub_api
+    import hashlib
+
+    catalog = call_hub_api("get_print_format_catalog")
+    if not catalog:
+        return _("No formats found in Hub")
+
+    synced_count = 0
+    for item in catalog:
+        name = item.get("name")
+        hub_hash = item.get("content_hash")
+        
+        should_sync = False
+        
+        if not frappe.db.exists("Print Format", name):
+            should_sync = True
+        else:
+            # Lean check: only sync if content changed
+            doc = frappe.get_doc("Print Format", name)
+            content = str(doc.html or "") + str(doc.css or "")
+            local_hash = hashlib.sha256(content.encode()).hexdigest()
+            
+            if local_hash != hub_hash:
+                should_sync = True
+        
+        if should_sync:
+            install_remote_format(name)
+            synced_count = synced_count + 1
+
+    return _("Synced {0} formats").format(synced_count)
