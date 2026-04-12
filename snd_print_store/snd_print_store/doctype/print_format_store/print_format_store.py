@@ -39,14 +39,13 @@ class PrintFormatStore(Document):
                 local_doc = frappe.get_doc("Print Format", local_name)
                 
                 # Generate local hash for comparison
-                html_str = str(local_doc.html or "")
-                css_str = str(local_doc.css or "")
-                local_content = html_str + css_str
+                if data.get("custom_format"):
+                    local_content = str(local_doc.html or "") + str(local_doc.css or "")
+                else:
+                    local_content = str(local_doc.format_data or "") + str(local_doc.css or "")
+
                 local_hash = hashlib.sha256(local_content.encode()).hexdigest()
-                
-                remote_hash = remote_item.get("content_hash") if remote_item else None
-                
-                if local_hash == remote_hash:
+                if local_hash == remote_item.get("content_hash"):
                     self.status = "Up to Date"
                 else:
                     self.status = "Update Available"
@@ -65,8 +64,11 @@ class PrintFormatStore(Document):
             if frappe.db.exists("Print Format", item['name']):
                 local_doc = frappe.get_doc("Print Format", item['name'])
                 
-                # Re-calculate hash live
-                local_content = str(local_doc.html or "") + str(local_doc.css or "")
+                if item.get("custom_format"):
+                    local_content = str(local_doc.html or "") + str(local_doc.css or "")
+                else:
+                    local_content = str(local_doc.format_data or "") + str(local_doc.css or "")
+
                 local_hash = hashlib.sha256(local_content.encode()).hexdigest()
                 
                 if local_hash == item.get("content_hash"):
@@ -149,9 +151,7 @@ def bulk_sync():
 
     synced_count = 0
     for item in catalog:
-        name = item.get("name")
-        hub_hash = item.get("content_hash")
-        
+        name = item.get("name")        
         should_sync = False
         
         if not frappe.db.exists("Print Format", name):
@@ -159,10 +159,14 @@ def bulk_sync():
         else:
             # Lean check: only sync if content changed
             doc = frappe.get_doc("Print Format", name)
-            content = str(doc.html or "") + str(doc.css or "")
+            if item.get("custom_format"):
+                content = str(doc.html or "") + str(doc.css or "")
+            else:
+                content = str(doc.format_data or "") + str(doc.css or "")
+
             local_hash = hashlib.sha256(content.encode()).hexdigest()
-            
-            if local_hash != hub_hash:
+
+            if local_hash != item.get("content_hash"):
                 should_sync = True
         
         if should_sync:

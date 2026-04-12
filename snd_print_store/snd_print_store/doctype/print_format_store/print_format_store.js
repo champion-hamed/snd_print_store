@@ -36,7 +36,7 @@ frappe.ui.form.on('Print Format Store', {
             frm.add_custom_button(btn_label, function() {
                 let confirm_msg = (btn_label === __('Update')) 
                     ? __('Updating will overwrite local changes. Continue?') 
-                    : __('Do you want to install a test copy of {0}?', [frm.doc.name]);
+                    : __('Do you want to install a copy of {0}?', [frm.doc.name]);
 
                 frappe.confirm(confirm_msg, function() {
                     install_format(frm);
