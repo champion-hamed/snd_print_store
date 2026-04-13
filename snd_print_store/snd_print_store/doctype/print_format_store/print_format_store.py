@@ -30,6 +30,7 @@ class PrintFormatStore(Document):
             self.module = data.get("module")
             self.print_format_for = data.get("print_format_for")
             self.preview_image = data.get("preview_image")
+            self.report = data.get("report")
             
             # 2. Check local status for the "- Hub" version
             local_name = self.name
@@ -45,7 +46,11 @@ class PrintFormatStore(Document):
                     local_content = str(local_doc.format_data or "") + str(local_doc.css or "")
 
                 local_hash = hashlib.sha256(local_content.encode()).hexdigest()
-                if local_hash == remote_item.get("content_hash"):
+                if (local_hash == remote_item.get("content_hash") 
+                    and local_doc.print_format_for == remote_item.get("print_format_for") 
+                    and (local_doc.doc_type == remote_item.get("doc_type") if remote_item.get("print_format_for") == "DocType" else True)
+                    and (local_doc.report == remote_item.get("report") if remote_item.get("print_format_for") == "Report" else True)
+                ):
                     self.status = "Up to Date"
                 else:
                     self.status = "Update Available"
@@ -71,12 +76,15 @@ class PrintFormatStore(Document):
 
                 local_hash = hashlib.sha256(local_content.encode()).hexdigest()
                 
-                if local_hash == item.get("content_hash"):
+                if (local_hash == item.get("content_hash") 
+                    and local_doc.print_format_for == item.get("print_format_for") 
+                    and (local_doc.doc_type == item.get("doc_type") if item.get("print_format_for") == "DocType" else True)
+                    and (local_doc.report == item.get("report") if item.get("print_format_for") == "Report" else True)
+                ):
                     item['status'] = "Up to Date"
                 else:
                     item['status'] = "Update Available"
 
-            # Inside your for loop in get_list:
             if item['status'] == "Update Available":
                 item['button_label'] = "Update"
             elif item['status'] == "Not Installed":
@@ -123,14 +131,14 @@ def install_remote_format(format_name):
 
     local_doc.update({
         "print_format_for": code_data.get("print_format_for"), 
-        "doc_type": code_data.get("doc_type"),
-        "report": code_data.get("report"),
-        "standard": "No", # Keeping your preference
+        "doc_type": code_data.get("doc_type") if code_data.get("print_format_for") == "DocType" else None,
+        "report": code_data.get("report") if code_data.get("print_format_for") == "Report" else None,
+        "standard": "No",
         "custom_format": code_data.get("custom_format"),
         "print_format_type": code_data.get("print_format_type"),
-        "html": code_data.get("html"),
+        "html": code_data.get("html") if code_data.get("custom_format") else None,
         "css": code_data.get("css"),
-        "format_data": code_data.get("format_data")
+        "format_data": code_data.get("format_data") if not code_data.get("custom_format") else None,
     })
 
     local_doc.save(ignore_permissions=True)
