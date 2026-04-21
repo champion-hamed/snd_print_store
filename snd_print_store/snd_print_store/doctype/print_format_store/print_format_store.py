@@ -113,7 +113,6 @@ def call_hub_api(method, params=None):
 
 @frappe.whitelist()
 def install_remote_format(format_name):
-    # Import inside to avoid circular dependencies if call_hub_api is in the same file
     from .print_format_store import call_hub_api
     
     code_data = call_hub_api("get_print_code", {"name": format_name})
@@ -125,11 +124,11 @@ def install_remote_format(format_name):
         local_doc = frappe.get_doc("Print Format", format_name)
     else:
         local_doc = frappe.new_doc("Print Format")
-        # Add this line to set the primary document ID
         local_doc.name = format_name 
         local_doc.print_format_name = format_name
-
-    local_doc.update({
+    
+    # 1. Use a Dictionary {} instead of a List []
+    fields_to_update = {
         "print_format_for": code_data.get("print_format_for"), 
         "doc_type": code_data.get("doc_type") if code_data.get("print_format_for") == "DocType" else None,
         "report": code_data.get("report") if code_data.get("print_format_for") == "Report" else None,
@@ -139,10 +138,32 @@ def install_remote_format(format_name):
         "html": code_data.get("html") if code_data.get("custom_format") else None,
         "css": code_data.get("css"),
         "format_data": code_data.get("format_data") if not code_data.get("custom_format") else None,
-    })
+        "default_print_language": code_data.get("default_print_language"),
+        "margin_top": code_data.get("margin_top"),
+        "margin_bottom": code_data.get("margin_bottom"),
+        "margin_left": code_data.get("margin_left"),
+        "margin_right": code_data.get("margin_right"),
+        "page_number": code_data.get("page_number"),
+    }
+
+    # 2. Assign the meta object to the variable 'meta'
+    meta = frappe.get_meta("Print Format")
+    
+    # Conditional fields check
+    optional_fields = ["is_default","disable_pagination", "page_layout", "with_letterhead", "page_size"]
+    
+    for field in optional_fields:
+        if meta.has_field(field):
+            fields_to_update[field] = code_data.get(field)
+
+    # 3. Apply updates (filter out None to avoid overwriting defaults with nulls)
+    local_doc.update({k: v for k, v in fields_to_update.items() if v is not None})
 
     local_doc.save(ignore_permissions=True)
-    
+
+    if code_data.get("is_default") and code_data.get("print_format_for") == "DocType":
+        make_default(format_name)
+
     return {
         "status": "success", 
         "message": _("Format {0} synced successfully").format(format_name)
@@ -182,3 +203,23 @@ def bulk_sync():
             synced_count = synced_count + 1
 
     return _("Synced {0} formats").format(synced_count)
+
+def make_default(name: str):
+    """Set print format as default"""
+    print_format = frappe.get_doc("Print Format", name)
+    print_format.check_permission("write")
+
+    doctype = frappe.get_doc("DocType", print_format.doc_type)
+    if doctype.custom:
+        doctype.default_print_format = name
+        doctype.save()
+    else:
+        # "Customize form"
+        frappe.make_property_setter(
+            {
+                "doctype_or_field": "DocType",
+                "doctype": print_format.doc_type,
+                "property": "default_print_format",
+                "value": name,
+            }
+        )
