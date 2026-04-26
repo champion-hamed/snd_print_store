@@ -43,8 +43,41 @@ frappe.ui.form.on('Print Format Store', {
                 });
             }).addClass('btn-primary');
         }
+        if (["Update Available", "Up to Date"].includes(frm.doc.status)) {
+            set_as_default(frm);
+            go_to_print_format(frm);
+        }
     }
 });
+
+function set_as_default(frm) {
+    if (frm.doc.doc_type) {
+        frappe.model.with_doctype(frm.doc.doc_type, function () {
+            let current_format = frappe.get_meta(frm.doc.doc_type).default_print_format;
+            if (current_format == frm.doc.name) {
+                return;
+            }
+    
+            frm.add_custom_button(__("Set as Default"), function () {
+                frappe.call({
+                    method: "frappe.printing.doctype.print_format.print_format.make_default",
+                    args: {
+                        name: frm.doc.name,
+                    },
+                    callback: function () {
+                        frm.refresh();
+                    },
+                });
+            });
+        });
+    }
+}
+
+function go_to_print_format(frm) {
+    frm.add_custom_button(__('Go to Print Format'), function() {
+        frappe.set_route("Form", "Print Format", frm.doc.name);
+    })
+}
 
 frappe.ui.form.handlers.enlarge_hub_image = function(src, title) {
     let d = new frappe.ui.Dialog({
